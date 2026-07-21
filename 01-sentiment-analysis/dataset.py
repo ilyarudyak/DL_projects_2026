@@ -35,7 +35,7 @@ class IMDBConfig:
     # 1. Dataset & Paths
     ###########################################################################
 
-    data_path: str = "datasets/02-hands-on-geron/imdb"
+    data_path: str = "datasets/imdb"
     checkpoint_dir: str = "checkpoints/"
     tokenizer_path: str = "datasets/tokenizers/"  # Path to save/load the trained BPE tokenizer
 
@@ -79,7 +79,7 @@ class IMDBConfig:
 class IMDBData:
 
     # EOS_TOKEN = "\n"  # End-of-sequence token for names
-    DATA_DIR = Path("/Users/iliarudiak/Library/Mobile Documents/com~apple~CloudDocs/_working/2026/")
+    DATA_DIR = Path(".")
 
     TRAIN = "train"
     VAL = "val"

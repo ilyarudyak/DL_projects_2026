@@ -2,7 +2,7 @@
 # 1. Dataset & paths
 ###########################################################################
 
-data_path: "datasets/02-hands-on-geron/imdb"
+data_path: "datasets/imdb"
 checkpoint_dir: "checkpoints/"
 tokenizer_path: "datasets/tokenizers/"  
 
@@ -19,10 +19,10 @@ pretrained_tokenizer: "gpt2"
 ###########################################################################
 
 # Model hyperparameters: in order of significance
-hidden_dim: 256              # Geron: 64
+hidden_dim: 64               # Geron: 64
 num_layers: 2                # Geron: 2
-embedding_dim: 256           # Geron: 128
-dropout: 0.2                 # Geron: 0.2
+embedding_dim: 128           # Geron: 128
+dropout: 0.4                 # Geron: 0.2 CHANGED! 0.2 -> 0.4
 
 ###########################################################################
 # 3. Training Hyperparameters
@@ -30,13 +30,13 @@ dropout: 0.2                 # Geron: 0.2
 
 batch_size: 512              # Geron: 256             
 learning_rate: 0.001         # Geron: torch.optim.NAdam(lr=0.001)
-epochs: 5                  # Geron: 10
-weight_decay: 0.001          # Geron: NOT used
+epochs: 10                   # Geron: 10
+weight_decay: 0.01           # Geron: NOT used CHANGED! 0.001 -> 0.01
 
 ###########################################################################
 # 4. Training Flow
 ###########################################################################
 
-patience: 3                  # 
+patience: 2                  # 
 gradient_clip_val: 1.0
 monitor_metric: 'val_loss'
