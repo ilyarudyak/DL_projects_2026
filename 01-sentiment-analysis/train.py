@@ -88,7 +88,7 @@ class TrainerHighLevel:
                  print_save_notification: bool = False,
                  skip_first_n_epochs: int = 0,
                  gradient_clip_val: float = 1.0,
-                 trainer_seed: int = 42
+                 trainer_seed: int = None
                  ):
         
         # (0) Set device and seed for reproducibility
