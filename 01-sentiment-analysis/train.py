@@ -95,9 +95,10 @@ class TrainerHighLevel:
         self.device = device
         logger.debug(f"===TRAINER INITIALIZATION===")
         logger.debug(f"Device set to: {self.device}")
-        pl.seed_everything(trainer_seed, workers=True)
-        self.seed = trainer_seed
-        logger.debug(f"Random seed in Lightning set to: {self.seed}")
+        if trainer_seed is not None:
+            pl.seed_everything(trainer_seed, workers=True)
+            self.seed = trainer_seed
+            logger.debug(f"Random seed in Lightning set to: {self.seed}")
         
         # (1) Load config
         if config is not None and config_file is not None: 
