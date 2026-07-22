@@ -1,0 +1,19 @@
+config: !!python/object:dataset.IMDBConfig
+  batch_size: 512
+  checkpoint_dir: checkpoints/
+  data_path: datasets/imdb
+  dropout: 0.4
+  embedding_dim: 128
+  epochs: 25
+  gradient_clip_val: 1.0
+  hidden_dim: 64
+  learning_rate: 0.001
+  max_seq_length: 500
+  max_vocab_size: 1000
+  monitor_metric: val_loss
+  num_layers: 2
+  patience: 25
+  pretrained_tokenizer: gpt2
+  tokenizer_path: datasets/tokenizers/
+  weight_decay: 0.01
+num_classes: 2
