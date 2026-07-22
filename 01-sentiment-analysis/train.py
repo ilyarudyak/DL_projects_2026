@@ -87,12 +87,17 @@ class TrainerHighLevel:
                  print_every_n_epochs: int = None,
                  print_save_notification: bool = False,
                  skip_first_n_epochs: int = 0,
-                 gradient_clip_val: float = 1.0):
+                 gradient_clip_val: float = 1.0,
+                 trainer_seed: int = 42
+                 ):
         
-        # (0) Set device
+        # (0) Set device and seed for reproducibility
         self.device = device
         logger.debug(f"===TRAINER INITIALIZATION===")
         logger.debug(f"Device set to: {self.device}")
+        pl.seed_everything(trainer_seed, workers=True)
+        self.seed = trainer_seed
+        logger.debug(f"Random seed in Lightning set to: {self.seed}")
         
         # (1) Load config
         if config is not None and config_file is not None: 

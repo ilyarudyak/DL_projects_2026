@@ -30,13 +30,13 @@ dropout: 0.4                 # Geron: 0.2 CHANGED! 0.2 -> 0.4
 
 batch_size: 512              # Geron: 256             
 learning_rate: 0.001         # Geron: torch.optim.NAdam(lr=0.001)
-epochs: 15                   # Geron: 10
+epochs: 25                   # Geron: 10
 weight_decay: 0.01           # Geron: NOT used CHANGED! 0.001 -> 0.01
 
 ###########################################################################
 # 4. Training Flow
 ###########################################################################
 
-patience: 3                  # 
+patience: 5                  # 
 gradient_clip_val: 1.0
 monitor_metric: 'val_loss'
