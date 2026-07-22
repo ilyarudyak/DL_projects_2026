@@ -2,12 +2,13 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,python,visualstudiocode,jupyternotebooks
 
 ### Ignore Data Files ###
-/data
-/corpus
-/datasets
+data/
+corpus/
+datasets/
 
 ### Ignore checkpoints ###
 */checkpoints/*
+checkpoints/
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks

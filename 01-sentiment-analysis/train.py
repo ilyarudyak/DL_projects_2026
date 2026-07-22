@@ -78,7 +78,7 @@ class TrainerHighLevel:
                 config_class = IMDBConfig,    # Inject class reference
                  data_class = IMDBData,      # Inject class reference
                  model_class = IMDBModelLPPackedSeq,     # Inject class reference
-                 config_name: str = 'base_config',
+                 config_file: str = 'base_config.yaml',
                  config_dir: str = 'configs/',
                  data_limit: int = 1000,
                  device: str = None,
@@ -88,13 +88,13 @@ class TrainerHighLevel:
                  gradient_clip_val: float = 1.0):
         
         self.config_dir = Path(config_dir)
-        self.config_name = config_name
+        self.config_file = config_file
         self.device = device
         logger.debug(f"===CONFIG INITIALIZATION===")
-        logger.debug(f"Config name: {self.config_name}")
+        logger.debug(f"Config name: {self.config_file}")
         
         # (1) Load config
-        self.config = config_class.from_yaml(self.config_dir / f"{config_name}.yaml")
+        self.config = config_class.from_yaml(self.config_dir / self.config_file)
         # self.is_val_set = data_class.val_split > 0.0
         
         if print_every_n_epochs is not None:
@@ -130,7 +130,7 @@ class TrainerHighLevel:
 
         checkpoint_callback = ModelCheckpoint(
             monitor=self.config.monitor_metric,
-            dirpath=str(Path(self.config.checkpoint_dir) / self.config_name.replace('.yaml', '')),
+            dirpath=str(Path(self.config.checkpoint_dir) / self.config_file.replace('.yaml', '')),
             filename='best-model',
             save_top_k=1,
             mode="min"
@@ -147,7 +147,7 @@ class TrainerHighLevel:
         
         csv_logger = CSVLogger(
             save_dir="logs/", 
-            name=self.config_name
+            name=self.config_file
         )
 
         trainer = pl.Trainer(
@@ -275,7 +275,7 @@ class TrainerHighLevel:
         summary_file = "logging.csv"
         data = {
             "timestamp": [pd.Timestamp.now()],
-            "config": [self.config_name],
+            "config": [self.config_file],
             "epoch": [best_epoch],
             **{k: [v] for k, v in metrics.items()}
         }
