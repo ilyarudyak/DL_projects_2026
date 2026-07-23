@@ -40,3 +40,4 @@ weight_decay: 0.01           # Geron: NOT used CHANGED! 0.001 -> 0.01
 patience: 3                  # 
 gradient_clip_val: 1.0
 monitor_metric: 'val_loss'
+scheduler_type: 'plateau'
