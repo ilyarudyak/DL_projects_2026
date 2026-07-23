@@ -74,6 +74,8 @@ class IMDBConfig:
     patience: int = 3                  #
     gradient_clip_val: float = 1.0
     monitor_metric: str = 'val_loss'
+    # Options: "plateau", "cosine", "one_cycle", or "none"
+    scheduler_type: str = 'plateau'  
 
     @classmethod
     def from_yaml(cls, path):
@@ -109,6 +111,11 @@ class IMDBData:
 
     GPT2_TOKENIZER = "gpt2"
     BERT_TOKENIZER = "bert-base-uncased"
+
+    LR_SCHEDULER_PLATEAU = "plateau"
+    LR_SCHEDULER_COSINE = "cosine"
+    LR_SCHEDULER_ONE_CYCLE = "one_cycle"
+    LR_SCHEDULER_NONE = "none"
     
     def __init__(self, 
                  config: IMDBConfig, 

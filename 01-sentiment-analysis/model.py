@@ -544,22 +544,82 @@ class IMDBModelLPPackedSeq(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
+        
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay
         )
 
-        # NEW: Retrieve the exact total number of steps/batches across all epochs
-        total_steps = self.trainer.estimated_stepping_batches
+        # Determine the scheduler type from the configuration
+        sched_type = self.config.scheduler_type
 
-        # Setup OneCycleLR scheduler for robust training rates
+        if sched_type == IMDBData.LR_SCHEDULER_PLATEAU:
+            return self._configure_plateau_lr(optimizer)
+        elif sched_type == IMDBData.LR_SCHEDULER_COSINE:
+            return self._configure_cosine_lr(optimizer)
+        elif sched_type == IMDBData.LR_SCHEDULER_ONE_CYCLE:
+            return self._configure_one_cycle_lr(optimizer)
+        elif sched_type == IMDBData.LR_SCHEDULER_NONE:
+            return {"optimizer": optimizer}
+        else:
+            raise ValueError(f"Unknown scheduler type: {sched_type}")
+
+    def _configure_plateau_lr(self, optimizer):
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=getattr(self.config, "scheduler_factor", 0.5),
+            patience=getattr(self.config, "scheduler_patience", 1),
+            min_lr=getattr(self.config, "min_lr", 1e-6),
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+                "monitor": getattr(self.config, "monitor_metric", "val_loss"),
+            },
+        }
+
+    def _configure_cosine_lr(self, optimizer):
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = int(
+            total_steps * (getattr(self.config, "warmup_epochs", 1) / max(1, self.config.epochs))
+        )
+        
+        warmup_sched = torch.optim.lr_scheduler.LinearLR(
+            optimizer, 
+            start_factor=0.1, 
+            end_factor=1.0, 
+            total_iters=warmup_steps
+        )
+        cosine_sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, 
+            T_max=max(1, total_steps - warmup_steps), 
+            eta_min=getattr(self.config, "min_lr", 1e-6)
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer, 
+            schedulers=[warmup_sched, cosine_sched], 
+            milestones=[warmup_steps]
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+            },
+        }
+
+    def _configure_one_cycle_lr(self, optimizer):
+        total_steps = self.trainer.estimated_stepping_batches
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
             max_lr=self.config.learning_rate,
-            total_steps=total_steps, # Use estimated total steps for OneCycleLR
+            total_steps=total_steps,
         )
-
         return {
             "optimizer": optimizer,
             "lr_scheduler": {

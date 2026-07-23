@@ -172,6 +172,11 @@ class TrainerHighLevel:
             name=self.run_name
         )
 
+        # Get callbacks based on scheduler type
+        callbacks = self._get_callbacks(metrics_callback, checkpoint_callback, early_stop_callback)
+        logger.debug(f"LR Scheduler type: {self.config.scheduler_type}.")
+        logger.debug(f"Callbacks set for trainer: {[type(cb).__name__ for cb in callbacks]}")
+
         trainer = pl.Trainer(
             max_epochs=self.config.epochs,
             # Use the specified device if provided, otherwise let PyTorch Lightning auto-select
@@ -181,7 +186,7 @@ class TrainerHighLevel:
             enable_model_summary=False, # Disable model summary to reduce verbosity
             enable_progress_bar=False, # Disable progress bar to reduce verbosity
 
-            callbacks=[metrics_callback, checkpoint_callback, early_stop_callback],
+            callbacks=callbacks,
             gradient_clip_val=self.gradient_clip_val
         )
         trainer_log_msg = f"Trainer created with max_epochs: {self.config.epochs}"
@@ -191,6 +196,15 @@ class TrainerHighLevel:
         logger.debug(trainer_log_msg)
 
         return trainer
+
+    def _get_callbacks(self, metrics_callback, checkpoint_callback, early_stop_callback):
+
+        callbacks = [metrics_callback, checkpoint_callback]
+        if self.config.scheduler_type in [IMDBData.LR_SCHEDULER_PLATEAU, 
+                                          IMDBData.LR_SCHEDULER_NONE]:
+            callbacks.append(early_stop_callback)
+        return callbacks
+            
     
     def fit(self):
         device = self.trainer.strategy.root_device
