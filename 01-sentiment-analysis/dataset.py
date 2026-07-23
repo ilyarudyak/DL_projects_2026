@@ -173,8 +173,8 @@ class IMDBData:
 
         # 1. Load the full dataset (will use cache if available)
         imdb_data = load_dataset(
-            # "stanfordnlp/imdb", 
-            "imdb",
+            "stanfordnlp/imdb", 
+            # "imdb",
             cache_dir=data_dir,
             download_mode="reuse_dataset_if_exists" 
         )
