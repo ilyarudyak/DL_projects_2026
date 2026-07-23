@@ -557,7 +557,6 @@ class IMDBModelLPPackedSeq(pl.LightningModule):
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
             optimizer,
             max_lr=self.config.learning_rate,
-            # total_steps=self.trainer.max_epochs,
             total_steps=total_steps, # Use estimated total steps for OneCycleLR
         )
 
@@ -565,7 +564,6 @@ class IMDBModelLPPackedSeq(pl.LightningModule):
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
-                # "interval": "epoch",
                 "interval": "step",  # Use 'step' for OneCycleLR
             },
         }
