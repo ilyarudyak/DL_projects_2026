@@ -328,4 +328,6 @@ BERT
 
 - **6. Addressing Model Instability (SWA / Label Smoothing)**: We noticed that seeds 42, 43, and 44 produced wildly different results. We may use **Stochastic Weight Averaging (SWA)**—which is built into PyTorch Lightning—to average weights over the final epochs. Alternatively, we may try **Label Smoothing** in our `CrossEntropyLoss` to prevent the model from becoming over-confident on specific noise in the training set, which should stabilize results across different seeds.
 
+-------------
+
 This was a Sentiment Analysis project for movie reviews using the IMDB dataset. 
