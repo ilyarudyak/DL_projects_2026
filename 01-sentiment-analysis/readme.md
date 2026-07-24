@@ -108,9 +108,59 @@ Epoch  10 | Train Loss: 0.1099 | Train Acc: 0.9635 | Val Loss: 0.5505 | Val Acc:
 
 - We use the **AdamW** optimizer, which is a variant of Adam that decouples weight decay from the gradient update. This is a default for almost all modern deep learning models (especially Transformers, CNNs, and language models). We use it with a standard `weight_decay=0.01`.
 
-
-
 ### 02 Learning Rate Scheduler
+
+- We initially used `OneCycleLR` learning rate scheduler. But we used it in a wrong way - this is a learning project after all. This scheduler is designed to be used with a **fixed number of training steps**. But we run it together with `EarlyStopping` callback, which stops training when the validation loss stops improving. 
+
+- First, we removed the `EarlyStopping` callback and ran the training for a fixed number of epochs (`epochs=10`). The results were not much better than with `EarlyStopping`. 
+
+```
+BERT tokenizer:
+=== Training with seed 44 ===
+🚀 Using hardware accelerator: cuda:0
+Epoch   1 | Train Loss: 0.7802 | Train Acc: 0.5286 | Val Loss: 0.6801 | Val Acc: 0.5768
+Epoch   2 | Train Loss: 0.6258 | Train Acc: 0.6447 | Val Loss: 0.5980 | Val Acc: 0.6842
+Epoch   3 | Train Loss: 0.4886 | Train Acc: 0.7839 | Val Loss: 0.7250 | Val Acc: 0.7456
+Epoch   4 | Train Loss: 0.3675 | Train Acc: 0.8555 | Val Loss: 0.3871 | Val Acc: 0.8454
+Epoch   5 | Train Loss: 0.2561 | Train Acc: 0.9050 | Val Loss: 0.3696 | Val Acc: 0.8604
+Epoch   6 | Train Loss: 0.1721 | Train Acc: 0.9403 | Val Loss: 0.4337 | Val Acc: 0.8566
+Epoch   7 | Train Loss: 0.1079 | Train Acc: 0.9668 | Val Loss: 0.5676 | Val Acc: 0.8440
+Epoch   8 | Train Loss: 0.0671 | Train Acc: 0.9806 | Val Loss: 0.5248 | Val Acc: 0.8564
+Epoch   9 | Train Loss: 0.0427 | Train Acc: 0.9894 | Val Loss: 0.5687 | Val Acc: 0.8546
+Epoch  10 | Train Loss: 0.0334 | Train Acc: 0.9929 | Val Loss: 0.5905 | Val Acc: 0.8538
+
+✅ Training finished. Loading best model State
+
+🏆 Best Model Metrics (from Epoch 5):
+├─ Train Loss: 0.2561
+├─ Train Acc:  0.9050
+├─ Val Loss:   0.3696
+└─ Val Acc:    0.8604
+```
+
+- Finally, we decided to use `ReduceLROnPlateau` learning rate scheduler, which reduces the learning rate when a metric has stopped improving. We started from `learning_rate=0.001`. It is designed to be used with `EarlyStopping` callback.
+
+```
+BERT tokenizer:
+=== Training with seed 44 ===
+🚀 Using hardware accelerator: cuda:
+Epoch   1 | Train Loss: 0.6453 | Train Acc: 0.6489 | Val Loss: 0.4792 | Val Acc: 0.8260
+Epoch   2 | Train Loss: 0.3580 | Train Acc: 0.8562 | Val Loss: 0.3585 | Val Acc: 0.8498
+Epoch   3 | Train Loss: 0.2346 | Train Acc: 0.9146 | Val Loss: 0.3477 | Val Acc: 0.8586
+Epoch   4 | Train Loss: 0.1720 | Train Acc: 0.9384 | Val Loss: 0.3710 | Val Acc: 0.8648
+Epoch   5 | Train Loss: 0.1298 | Train Acc: 0.9568 | Val Loss: 0.4582 | Val Acc: 0.8576
+Epoch   6 | Train Loss: 0.0735 | Train Acc: 0.9780 | Val Loss: 0.4479 | Val Acc: 0.8640
+
+🛑 Early Stopping triggered at epoch 6
+
+✅ Training finished. Loading best model State
+
+🏆 Best Model Metrics (from Epoch 3):
+├─ Train Loss: 0.2346
+├─ Train Acc:  0.9146
+├─ Val Loss:   0.3477
+└─ Val Acc:    0.8586
+```
 
 ### 03 Batch Size
 
@@ -277,3 +327,5 @@ BERT
 - **5. Pre-trained Embeddings**: Currently, we initialize our `nn.Embedding` from scratch with a normal distribution in `model.py`. We may load pre-trained **GloVe** or **FastText** vectors into our embedding layer. The size of Embedding matrix is `vocab_size x embedding_dim` (e.g., 30,522 x 128 for BERT tokenizer), so it is pretty big, which can be one of the reasons behind instability of the training. 
 
 - **6. Addressing Model Instability (SWA / Label Smoothing)**: We noticed that seeds 42, 43, and 44 produced wildly different results. We may use **Stochastic Weight Averaging (SWA)**—which is built into PyTorch Lightning—to average weights over the final epochs. Alternatively, we may try **Label Smoothing** in our `CrossEntropyLoss` to prevent the model from becoming over-confident on specific noise in the training set, which should stabilize results across different seeds.
+
+This was a Sentiment Analysis project for movie reviews using the IMDB dataset. 
