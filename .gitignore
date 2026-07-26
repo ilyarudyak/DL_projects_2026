@@ -1,14 +1,22 @@
 # Created by https://www.toptal.com/developers/gitignore/api/macos,python,visualstudiocode,jupyternotebooks
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,python,visualstudiocode,jupyternotebooks
 
+# In Git, writing checkpoints/ or logs/ ignores any folder with that name *at any depth* in the project
+
 ### Ignore Data Files ###
 data/
 corpus/
 datasets/
 
 ### Ignore checkpoints ###
-*/checkpoints/*
 checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+### Ignore logs ###
+logs/
+*.log
 
 ### JupyterNotebooks ###
 # gitignore template for Jupyter Notebooks
