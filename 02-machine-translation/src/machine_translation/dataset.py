@@ -219,26 +219,40 @@ class TatoebaData(pl.LightningDataModule):
 
         # Extract source texts from the batch
         src_texts = [entry['source_text'] for entry in batch]
+        logger.debug(f"Batch source_texts length: {len(src_texts)}") 
+        logger.debug(f"Batch example source_text: {src_texts[0]}")
 
         # Prepare target texts with BOS and EOS tokens
         tgt_texts = [f"{self.BOS_TOKEN} {entry['target_text']} {self.EOS_TOKEN}" for entry in batch]
+        logger.debug(f"Batch target_texts length: {len(tgt_texts)}")
+        logger.debug(f"Batch example target_text: {tgt_texts[0]}")
 
         # Tokenize source and target sequences once
-        src_encodings = self.tokenizer.encode_batch(src_texts)
-        tgt_encodings = self.tokenizer.encode_batch(tgt_texts)
+        src_encodings = self.tokenizer.encode_batch(src_texts) # [batch_size, seq_length]
+        # Print shape and example of source encodings
+        logger.debug(f"Source encodings length: {len(src_encodings)}")
+        logger.debug(f"Source encoding example encodings: {src_encodings[0]}")
+        logger.debug(f"Source encoding example ids: {src_encodings[0].ids}")
+        tgt_encodings = self.tokenizer.encode_batch(tgt_texts) # [batch_size, seq_length]
+        logger.debug(f"Target encodings length: {len(tgt_encodings)}")
+        logger.debug(f"Target encoding example encodings: {tgt_encodings[0]}")
+        logger.debug(f"Target encoding example ids: {tgt_encodings[0].ids}")
 
+
+        # Extract input IDs and attention masks from the encodings and convert them to PyTorch tensors
         src_ids = torch.tensor([enc.ids for enc in src_encodings], dtype=torch.long)
         src_mask = torch.tensor([enc.attention_mask for enc in src_encodings], dtype=torch.long)
-
+        # Extract target IDs and attention masks from the encodings and convert them to PyTorch tensors
         tgt_ids = torch.tensor([enc.ids for enc in tgt_encodings], dtype=torch.long)
         tgt_mask = torch.tensor([enc.attention_mask for enc in tgt_encodings], dtype=torch.long)
 
+        # Return a dictionary as expected by Pytorch Lightning
         return {
             "encoder_input_ids": src_ids,
             "encoder_attention_mask": src_mask,
-            "decoder_input_ids": tgt_ids[:, :-1],    # Drops </s> (Starts with <s>)
-            "decoder_attention_mask": tgt_mask[:, :-1],
-            "labels": tgt_ids[:, 1:],                 # Drops <s> (Ends with </s>)
+            "decoder_input_ids": tgt_ids[:, :-1],    # Drops </s> (Starts with <s>) [batch_size, seq_length-1]
+            "decoder_attention_mask": tgt_mask[:, :-1], # 
+            "decoder_labels": tgt_ids[:, 1:],                 # Drops <s> (Ends with </s>) [batch_size, seq_length-1]
         }
                 
     def train_dataloader(self):
