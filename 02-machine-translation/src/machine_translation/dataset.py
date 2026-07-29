@@ -32,6 +32,8 @@ class TatoebaData(pl.LightningDataModule):
                  seed: int = 42):
         super().__init__()
 
+        logger.debug(f"=== DATASET CREATION ===")
+
         # Store the configuration and set up paths
         self.config: TatoebaConfig = config
         self.data_path: Path = Path(config.data_path)

@@ -27,18 +27,18 @@ class TatoebaConfig:
     # 2. Model Hyperparameters 
     ###########################################################################
 
-    hidden_dim: int = 64              # Geron: 64
+    hidden_dim: int = 512              # Geron: 512
     num_layers: int = 2                # Geron: 2
-    embedding_dim: int = 128           # Geron: 128
-    dropout: float = 0.4               # Geron: 0.2
+    embedding_dim: int = 512           # Geron: 512
+    dropout: float = 0.0               # Geron: 0.0
 
     ###########################################################################
     # 3. Training Hyperparameters
     ###########################################################################
 
-    batch_size: int = 32              # Geron: 32
-    learning_rate: float = 0.001       # Geron: torch.optim.NAdam(lr=0.001)
-    epochs: int = 15                   # Geron: 10
+    batch_size: int = 32               # Geron: 32
+    learning_rate: float = 0.001       # Geron: torch.optim.NAdam(..., lr=0.001)
+    epochs: int = 10                   # Geron: 10
     weight_decay: float = 0.01         # Geron: NOT used
 
     ###########################################################################

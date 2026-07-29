@@ -8,7 +8,7 @@ import pandas as pd
 import os
 
 from dataset import IMDBConfig, IMDBData
-from model import IMDBModelLP, IMDBModelLPPackedSeq
+from model import IMDBModelLP, TatoebaModelPackedSeq
 
 import logging
 logger = logging.getLogger("imdb.trainer")
@@ -77,7 +77,7 @@ class TrainerHighLevel:
     def __init__(self, 
                 config_class = IMDBConfig,    # Inject class reference
                  data_class = IMDBData,      # Inject class reference
-                 model_class = IMDBModelLPPackedSeq,     # Inject class reference
+                 model_class = TatoebaModelPackedSeq,     # Inject class reference
                  config: IMDBConfig = None,  # Optional: Directly pass a config instance
                  run_name: str = 'base_config',          # Optional: Name for the run 
                  config_file: str = 'base_config.yaml',
