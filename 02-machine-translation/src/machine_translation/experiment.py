@@ -317,7 +317,7 @@ class ExperimentRunnerWithCustomLogging:
                 self.model = self.model_class.load_from_checkpoint(
                     best_path,
                     config=self.config,
-                    data=self.data
+                    tokenizer=self.data.tokenizer
                 )
         else:
             print("\n⚠️ No checkpoint found. Proceeding with last epoch state.")
@@ -356,7 +356,7 @@ class ExperimentRunnerWithCustomLogging:
         self.model = self.model_class.load_from_checkpoint(
             checkpoint_path,
             config=self.config,
-            data=self.data
+            tokenizer=self.data.tokenizer
         )
         self.model.eval()
 
