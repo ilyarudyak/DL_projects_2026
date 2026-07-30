@@ -57,6 +57,14 @@ class TatoebaData(pl.LightningDataModule):
     def pad_id(self):
         return self.tokenizer.token_to_id(self.PAD_TOKEN)
 
+    @property
+    def bos_id(self):
+        return self.tokenizer.token_to_id(self.BOS_TOKEN)
+
+    @property
+    def eos_id(self):
+        return self.tokenizer.token_to_id(self.EOS_TOKEN)
+
     def prepare_data(self):
         """
         Global setup (GPU 0 / Process 0 only):

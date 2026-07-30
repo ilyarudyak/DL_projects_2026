@@ -43,7 +43,7 @@ class CleanMetricsLogger(Callback):
         self.print_save_notification = print_save_notification
 
         # Initialize a custom history dictionary to store metrics for plotting
-        self.history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
+        self.history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'val_bleu': []}
 
     def on_train_epoch_end(self, trainer, pl_module):
 
@@ -60,9 +60,9 @@ class CleanMetricsLogger(Callback):
             t_loss, t_acc = m.get('train_loss'), m.get('train_acc')
             msg = f"Epoch {epoch:3d} | Train Loss: {t_loss:.4f} | Train Acc: {t_acc:.4f}"
 
-            v_loss, v_acc = m.get('val_loss'), m.get('val_acc')
-            if v_loss is not None and v_acc is not None:
-                msg += f" | Val Loss: {v_loss:.4f} | Val Acc: {v_acc:.4f}"
+            v_loss, v_acc, v_bleu = m.get('val_loss'), m.get('val_acc'), m.get('val_bleu')
+            if v_loss is not None:
+                msg += f" | Val Loss: {v_loss:.4f} | Val Acc: {v_acc:.4f} | Val BLEU: {v_bleu:.4f}"
             print(msg)
 
     def on_save_checkpoint(self, trainer, pl_module, checkpoint):
@@ -124,7 +124,7 @@ class ExperimentRunnerWithCustomLogging:
                  config_file: str = None,
                  config_dir: str = 'configs/',
 
-                 data_limit: int = 1000, # Optional: Limit the number of data samples for quick testing
+                 data_limit: int = None, # Optional: Limit the number of data samples for quick testing
                  device: str = "auto",  # Default to auto-select device by PyTorch Lightning
 
                  print_every_n_epochs: int = 1, # Optional: Frequency of printing metrics during training
@@ -163,11 +163,16 @@ class ExperimentRunnerWithCustomLogging:
                                data_limit=data_limit,
                                seed=self.seed)
 
+        # FIX: The model architecture depends on vocab_size/pad_id.
+        # We must manually prepare data and setup the datamodule to load the tokenizer.
+        self.data.prepare_data()
+        self.data.setup()
+
         # (3) Create model
         self.model_class = model_class
         self.model = model_class( 
                             config=self.config,
-                            data=self.data,
+                            tokenizer=self.data.tokenizer
                             )
         
         # (4) Create trainer
@@ -241,7 +246,7 @@ class ExperimentRunnerWithCustomLogging:
 
         return callbacks
             
-    def fit(self, load_best_model=False):
+    def fit(self, load_best_model=True):
 
         # (1) Print the ACTUAL device being used for training
         device = self.trainer.strategy.root_device
@@ -253,7 +258,7 @@ class ExperimentRunnerWithCustomLogging:
         # (3) After training,  print the best metrics and optionally load the best model checkpoint
         self._get_best_metrics(load_best_model=load_best_model)
 
-    def _get_best_metrics(self, load_best_model=False):
+    def _get_best_metrics(self, load_best_model=True):
         """
         Load the best model checkpoint after training and print the best metrics.
         """
@@ -288,8 +293,10 @@ class ExperimentRunnerWithCustomLogging:
 
                     val_loss = history['val_loss'][best_idx]
                     val_acc = history['val_acc'][best_idx]
+                    val_bleu = history['val_bleu'][best_idx]
                     print(f"├─ Val Loss:   {val_loss:.4f}")
-                    print(f"└─ Val Acc:    {val_acc:.4f}")
+                    print(f"├─ Val Acc:    {val_acc:.4f}")
+                    print(f"└─ Val BLEU:   {val_bleu:.4f}")
                     # print(f"📂 Loaded best checkpoint from: {best_path}\n")
 
                     # --- NEW: Call the logging function here ---
@@ -297,7 +304,8 @@ class ExperimentRunnerWithCustomLogging:
                         'train_loss': train_loss,
                         'train_acc': train_acc,
                         'val_loss': val_loss,
-                        'val_acc': val_acc
+                        'val_acc': val_acc,
+                        'val_bleu': val_bleu
                     }
 
                     # Save the best metrics to a CSV file for future reference
@@ -367,7 +375,8 @@ class ExperimentRunnerWithCustomLogging:
             "train_loss": [metrics['train_loss']],
             "train_acc": [metrics['train_acc']],
             "val_loss": [metrics['val_loss']],
-            "val_acc": [metrics['val_acc']]
+            "val_acc": [metrics['val_acc']],
+            "val_bleu": [metrics['val_bleu']]
         }
         df = pd.DataFrame(data)
 

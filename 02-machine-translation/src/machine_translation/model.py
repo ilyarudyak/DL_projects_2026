@@ -39,13 +39,13 @@ class TatoebaModelPackedSeq(pl.LightningModule):
 
     def __init__(self, 
                  config: TatoebaConfig,
-                 vocab_size: int, 
-                 pad_id: int):
+                 tokenizer: TatoebaData.tokenizer,
+                 ):
         
         super().__init__()
 
         # Save hyperparameters so we can load the model from checkpoint later
-        self.save_hyperparameters() 
+        self.save_hyperparameters(ignore=['tokenizer'])
 
         logger.debug(f"===MODEL CREATION===")
 
@@ -53,11 +53,12 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         self.config = config
 
         # Setup vocabulary size and padding index for the model
-        self.vocab_size = vocab_size
-        self.pad_id = pad_id
+        self.tokenizer = tokenizer
+        self.vocab_size = tokenizer.get_vocab_size()
+        self.pad_id = tokenizer.token_to_id(TatoebaData.PAD_TOKEN)
+        self.bos_id = tokenizer.token_to_id(TatoebaData.BOS_TOKEN)
+        self.eos_id = tokenizer.token_to_id(TatoebaData.EOS_TOKEN)
         logger.debug(f"Model initialized with vocab_size: {self.vocab_size:,}, pad_id: {self.pad_id}")
-        
-
         
         # Log the model hyperparameters for debugging: hidden_dim, num_layers, embedding_dim, dropout
         log_message = f"Model hyperparameters: hidden_dim={self.config.hidden_dim}"
@@ -131,8 +132,7 @@ class TatoebaModelPackedSeq(pl.LightningModule):
             ignore_index=self.pad_id
         )
         # n_gram=4 is standard for BLEU
-        # TODO: Implement BLEU score computation in validation_step and test_step
-        # self.val_bleu = BLEUScore(n_gram=4)
+        self.val_bleu = BLEUScore(n_gram=4)
 
     ####################################################
     # Essential methods for PyTorch Lightning
@@ -243,9 +243,17 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         # Calculate accuracy using torchmetrics
         self.val_acc(logits, decoder_labels)
 
+        # BLEU Score: Generate sequences and decode to strings
+        generated_ids = self.generate(batch["encoder_input_ids"], batch["encoder_attention_mask"])
+        preds = self.tokenizer.decode_batch(generated_ids.tolist(), skip_special_tokens=True)
+        # Wrap each target in a list for BLEUScore requirements
+        targets = [[t] for t in self.tokenizer.decode_batch(batch["decoder_labels"].tolist(), skip_special_tokens=True)]
+        self.val_bleu(preds, targets)
+
         # Log the validation loss and accuracy for monitoring (Lightning)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val_acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val_bleu", self.val_bleu, on_step=False, on_epoch=True, prog_bar=True)
 
         return loss
 
@@ -275,6 +283,63 @@ class TatoebaModelPackedSeq(pl.LightningModule):
     # Helper methods for weight initialization and 
     # learning rate scheduling
     ####################################################
+
+    @torch.no_grad()
+    def generate(self, encoder_input_ids, encoder_attention_mask, max_length=None):
+        """Greedy decoding for validation/inference."""
+        batch_size = encoder_input_ids.size(0)
+        max_length = max_length or self.config.max_seq_length
+        
+        # 1) Encode once
+        src_embeddings = self.embed(encoder_input_ids)
+        src_lengths = encoder_attention_mask.sum(dim=1).cpu()
+        packed_embeddings = nn.utils.rnn.pack_padded_sequence(
+            src_embeddings, src_lengths, batch_first=True, enforce_sorted=False
+        )
+        _, hidden = self.encoder(packed_embeddings)
+        
+        # 2) Recursive decoding
+        decoder_input_ids = torch.full((batch_size, 1), self.bos_id, device=self.device)
+        all_tokens = []
+        
+        for _ in range(max_length):
+            tgt_embeddings = self.embed(decoder_input_ids)
+            outputs, hidden = self.decoder(tgt_embeddings, hidden)
+            logits = self.fc(self.ln(outputs))
+            next_token = torch.argmax(logits, dim=-1)
+            all_tokens.append(next_token)
+            decoder_input_ids = next_token
+            # Stop if all sequences in batch reached EOS
+            if (next_token == self.eos_id).all():
+                break
+                
+        return torch.cat(all_tokens, dim=1)
+
+    def translate(self, text: str, max_length: int = None):
+        """
+        A high-level utility to translate a single raw string.
+        It handles tokenization, moving tensors to the correct device,
+        optimized inference, and decoding.
+        """
+        # Ensure model is in eval mode
+        self.eval()
+        
+        with torch.no_grad():
+            # 1. Tokenize input string
+            encoding = self.tokenizer.encode(text)
+            # Add batch dimension [1, seq_len] and move to model device
+            input_ids = torch.tensor([encoding.ids], device=self.device)
+            mask = torch.tensor([encoding.attention_mask], device=self.device)
+
+            # 2. Call the optimized generate method
+            # This uses the hidden-state passing logic we reviewed
+            output_ids = self.generate(input_ids, mask, max_length=max_length)
+
+            # 3. Decode tokens back to a human-readable string
+            # output_ids[0] to remove the batch dimension
+            prediction = self.tokenizer.decode(output_ids[0].tolist(), skip_special_tokens=True)
+
+        return prediction
 
     def _init_weights(self):
         """
