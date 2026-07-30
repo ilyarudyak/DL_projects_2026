@@ -34,13 +34,15 @@ class CleanMetricsLogger(Callback):
 
     def __init__(self, 
                  print_every_n_epochs=1,
-                print_save_notification=False
+                print_save_notification=False,
+                compute_bleu=False
                  ):
         super().__init__()
 
         # Store the print frequency and save notification flag
         self.print_every_n_epochs = print_every_n_epochs
         self.print_save_notification = print_save_notification
+        self.compute_bleu = compute_bleu
 
         # Initialize a custom history dictionary to store metrics for plotting
         self.history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'val_bleu': []}
@@ -258,15 +260,16 @@ class ExperimentRunnerWithCustomLogging:
         self.trainer.fit(self.model, datamodule=self.data)
 
         # (2) RUN BLEU ONCE on the best model
-        print("\n🏆 Computing BLEU score for the best model...")
-        # This tells Lightning to reload the best checkpoint and run test_step 
-        # using the validation dataloader
-        self.trainer.test(
-            model=self.model, 
-            dataloaders=self.data.val_dataloader(), 
-            ckpt_path='best',
-            verbose=False  # This hides the "strange table"
-        )
+        if self.compute_bleu:
+            print("\n🏆 Computing BLEU score for the best model...")
+            # This tells Lightning to reload the best checkpoint and run test_step 
+            # using the validation dataloader
+            self.trainer.test(
+                model=self.model, 
+                dataloaders=self.data.val_dataloader(), 
+                ckpt_path='best',
+                verbose=False  # This hides the "strange table"
+            )
 
         # (4) After training,  print the best metrics and optionally load the best model checkpoint
         self._get_best_metrics(load_best_model=load_best_model)
