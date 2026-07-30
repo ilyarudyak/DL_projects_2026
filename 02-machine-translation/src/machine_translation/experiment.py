@@ -34,15 +34,13 @@ class CleanMetricsLogger(Callback):
 
     def __init__(self, 
                  print_every_n_epochs=1,
-                print_save_notification=False,
-                compute_bleu=False
+                print_save_notification=False
                  ):
         super().__init__()
 
         # Store the print frequency and save notification flag
         self.print_every_n_epochs = print_every_n_epochs
         self.print_save_notification = print_save_notification
-        self.compute_bleu = compute_bleu
 
         # Initialize a custom history dictionary to store metrics for plotting
         self.history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': [], 'val_bleu': []}
@@ -133,6 +131,7 @@ class ExperimentRunnerWithCustomLogging:
 
                  print_every_n_epochs: int = 1, # Optional: Frequency of printing metrics during training
                  print_save_notification: bool = False, # Optional: Whether to print when a model checkpoint is saved
+                 compute_bleu: bool = False  # Optional: Whether to compute BLEU score after training    
                  ):
         
         # (1) Set device parameter
@@ -182,6 +181,7 @@ class ExperimentRunnerWithCustomLogging:
         # (4) Create trainer
         logger.debug(f"===TRAINER INITIALIZATION===")
         self.print_save_notification = print_save_notification
+        self.compute_bleu = compute_bleu
         self.gradient_clip_val = getattr(self.config, 'gradient_clip_val', 1.0)  # Default to 1.0 if not specified in config
         self.trainer = self._setup_trainer()
         
