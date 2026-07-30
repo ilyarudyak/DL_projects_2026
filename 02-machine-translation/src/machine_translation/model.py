@@ -4,6 +4,7 @@ import torch.nn as nn
 import pytorch_lightning as pl
 import torchmetrics
 from torchmetrics.text import BLEUScore
+import tokenizers
 
 # Standard library imports
 from pathlib import Path
@@ -39,7 +40,7 @@ class TatoebaModelPackedSeq(pl.LightningModule):
 
     def __init__(self, 
                  config: TatoebaConfig,
-                 tokenizer: TatoebaData.tokenizer,
+                 tokenizer: tokenizers.Tokenizer,
                  ):
         
         super().__init__()
