@@ -275,14 +275,22 @@ class TatoebaData(pl.LightningDataModule):
         return torch.utils.data.DataLoader(self.train_data, 
                                            batch_size=self.config.batch_size, 
                                            collate_fn=self._collate_fn,
-                                           shuffle=True)
+                                           shuffle=True,
+                                           num_workers=4,
+                                           pin_memory=True
+                                           )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_data, 
                                            batch_size=self.config.batch_size, 
-                                           collate_fn=self._collate_fn)
+                                           collate_fn=self._collate_fn,
+                                           num_workers=4,
+                                           pin_memory=True
+                                           )
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_data, 
                                            batch_size=self.config.batch_size, 
-                                           collate_fn=self._collate_fn)
+                                           collate_fn=self._collate_fn,
+                                           num_workers=4,
+                                           pin_memory=True)
