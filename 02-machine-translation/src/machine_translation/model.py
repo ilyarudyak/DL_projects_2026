@@ -41,6 +41,7 @@ class TatoebaModelPackedSeq(pl.LightningModule):
     def __init__(self, 
                  config: TatoebaConfig,
                  tokenizer: tokenizers.Tokenizer,
+                 bleu_every_epoch: bool = False,
                  ):
         
         super().__init__()
@@ -133,6 +134,7 @@ class TatoebaModelPackedSeq(pl.LightningModule):
             ignore_index=self.pad_id
         )
         # n_gram=4 is standard for BLEU
+        self.bleu_every_epoch = bleu_every_epoch
         self.val_bleu = BLEUScore(n_gram=4)
 
     ####################################################
@@ -244,19 +246,21 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         # Calculate accuracy using torchmetrics
         self.val_acc(logits, decoder_labels)
 
-        # BLEU Score: Generate sequences and decode to strings
-        generated_ids = self.generate(batch["encoder_input_ids"], batch["encoder_attention_mask"])
-        preds = self.tokenizer.decode_batch(generated_ids.tolist(), skip_special_tokens=True)
-        # Wrap each target in a list for BLEUScore requirements
-        targets = [[t] for t in self.tokenizer.decode_batch(batch["decoder_labels"].tolist(), skip_special_tokens=True)]
-        self.val_bleu(preds, targets)
+        if self.bleu_every_epoch:
+            self._compute_bleu(batch)
 
         # Log the validation loss and accuracy for monitoring (Lightning)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val_acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val_bleu", self.val_bleu, on_step=False, on_epoch=True, prog_bar=True)
 
         return loss
+
+    def test_step(self, batch, batch_idx):
+        """
+        Used for the one-time BLEU evaluation at the end of training.
+        This runs on the validation set (or test set) using the best weights.
+        """
+        self._compute_bleu(batch)
 
     def configure_optimizers(self):
         
@@ -433,3 +437,16 @@ class TatoebaModelPackedSeq(pl.LightningModule):
                 "interval": "step",  # Use 'step' for OneCycleLR
             },
         }
+
+    def _compute_bleu(self, batch):
+
+        # BLEU Score: Generate sequences and decode to strings
+        generated_ids = self.generate(batch["encoder_input_ids"], batch["encoder_attention_mask"])
+        preds = self.tokenizer.decode_batch(generated_ids.tolist(), skip_special_tokens=True)
+
+        # Wrap each target in a list for BLEUScore requirements
+        targets = [[t] for t in self.tokenizer.decode_batch(batch["decoder_labels"].tolist(), skip_special_tokens=True)]
+        self.val_bleu(preds, targets)
+
+        # Log the BLEU score for monitoring (Lightning)
+        self.log("final_bleu", self.val_bleu, on_step=False, on_epoch=True, prog_bar=True)

@@ -264,6 +264,23 @@ class TatoebaData(pl.LightningDataModule):
             "decoder_attention_mask": tgt_mask[:, :-1], # 
             "decoder_labels": tgt_ids[:, 1:],                 # Drops <s> (Ends with </s>) [batch_size, seq_length-1]
         }
+
+    def _loader_parameters(self):
+        if torch.cuda.is_available():
+            return {
+                "num_workers": 4,
+                "pin_memory": True,
+                "persistent_workers": True, # Optimized for A100
+                "prefetch_factor": 2 # Optimized for A100
+            }
+        else:
+            return {
+                "num_workers": 0,
+                "pin_memory": False,
+                "persistent_workers": False,
+                "prefetch_factor": None
+            }
+
                 
     def train_dataloader(self):
         """
@@ -276,21 +293,19 @@ class TatoebaData(pl.LightningDataModule):
                                            batch_size=self.config.batch_size, 
                                            collate_fn=self._collate_fn,
                                            shuffle=True,
-                                           num_workers=4,
-                                           pin_memory=True
+                                           **self._loader_parameters()
                                            )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_data, 
                                            batch_size=self.config.batch_size, 
                                            collate_fn=self._collate_fn,
-                                           num_workers=4,
-                                           pin_memory=True
+                                           **self._loader_parameters()
                                            )
 
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_data, 
                                            batch_size=self.config.batch_size, 
                                            collate_fn=self._collate_fn,
-                                           num_workers=4,
-                                           pin_memory=True)
+                                           **self._loader_parameters()
+                                           )

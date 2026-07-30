@@ -62,7 +62,9 @@ class CleanMetricsLogger(Callback):
 
             v_loss, v_acc, v_bleu = m.get('val_loss'), m.get('val_acc'), m.get('val_bleu')
             if v_loss is not None:
-                msg += f" | Val Loss: {v_loss:.4f} | Val Acc: {v_acc:.4f} | Val BLEU: {v_bleu:.4f}"
+                msg += f" | Val Loss: {v_loss:.4f} | Val Acc: {v_acc:.4f}"
+            if v_bleu is not None:
+                    msg += f" | Val BLEU: {v_bleu:.4f}"
             print(msg)
 
     def on_save_checkpoint(self, trainer, pl_module, checkpoint):
@@ -255,7 +257,18 @@ class ExperimentRunnerWithCustomLogging:
         # (2) Fit the model using PyTorch Lightning's Trainer with the provided data module
         self.trainer.fit(self.model, datamodule=self.data)
 
-        # (3) After training,  print the best metrics and optionally load the best model checkpoint
+        # (2) RUN BLEU ONCE on the best model
+        print("\n🏆 Computing BLEU score for the best model...")
+        # This tells Lightning to reload the best checkpoint and run test_step 
+        # using the validation dataloader
+        self.trainer.test(
+            model=self.model, 
+            dataloaders=self.data.val_dataloader(), 
+            ckpt_path='best',
+            verbose=False  # This hides the "strange table"
+        )
+
+        # (4) After training,  print the best metrics and optionally load the best model checkpoint
         self._get_best_metrics(load_best_model=load_best_model)
 
     def _get_best_metrics(self, load_best_model=True):
@@ -293,11 +306,17 @@ class ExperimentRunnerWithCustomLogging:
 
                     val_loss = history['val_loss'][best_idx]
                     val_acc = history['val_acc'][best_idx]
-                    val_bleu = history['val_bleu'][best_idx]
+                    # val_bleu = history['val_bleu'][best_idx]
                     print(f"├─ Val Loss:   {val_loss:.4f}")
                     print(f"├─ Val Acc:    {val_acc:.4f}")
-                    print(f"└─ Val BLEU:   {val_bleu:.4f}")
+                    # print(f"└─ Val BLEU:   {val_bleu:.4f}")
                     # print(f"📂 Loaded best checkpoint from: {best_path}\n")
+
+                    # NEW: Get the BLEU score from the test run results
+                    # (logged as 'final_bleu' in our model.py test_step)
+                    final_bleu = self.trainer.callback_metrics.get('final_bleu')
+                    if final_bleu is not None:
+                        print(f"└─ Val BLEU:   {final_bleu:.4f}")
 
                     # --- NEW: Call the logging function here ---
                     best_metrics = {
@@ -305,7 +324,7 @@ class ExperimentRunnerWithCustomLogging:
                         'train_acc': train_acc,
                         'val_loss': val_loss,
                         'val_acc': val_acc,
-                        'val_bleu': val_bleu
+                        'val_bleu': final_bleu.item() if final_bleu else 0.0
                     }
 
                     # Save the best metrics to a CSV file for future reference
