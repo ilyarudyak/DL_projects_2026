@@ -220,12 +220,12 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         # Compute the loss using the logits and the true labels
         loss = self.loss_fn(logits, decoder_labels)
         
-        # Calculate accuracy using torchmetrics
-        self.train_acc(logits, decoder_labels)
+        # Count the number of target tokens (non-padding) for speed calculation
+        target_tokens = (decoder_labels != self.pad_id).sum()
 
         # Log the training loss and accuracy for monitoring (Lightning)
         self.log("train_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log("train_acc", self.train_acc, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train_tokens", target_tokens, on_step=False, on_epoch=True, reduce_fx="sum")
 
         return loss
 
@@ -242,16 +242,9 @@ class TatoebaModelPackedSeq(pl.LightningModule):
 
         # Compute the loss using the logits and the true labels
         loss = self.loss_fn(logits, decoder_labels)
-        
-        # Calculate accuracy using torchmetrics
-        self.val_acc(logits, decoder_labels)
-
-        if self.bleu_every_epoch:
-            self._compute_bleu(batch)
 
         # Log the validation loss and accuracy for monitoring (Lightning)
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val_acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
 
         return loss
 
@@ -437,16 +430,3 @@ class TatoebaModelPackedSeq(pl.LightningModule):
                 "interval": "step",  # Use 'step' for OneCycleLR
             },
         }
-
-    def _compute_bleu(self, batch):
-
-        # BLEU Score: Generate sequences and decode to strings
-        generated_ids = self.generate(batch["encoder_input_ids"], batch["encoder_attention_mask"])
-        preds = self.tokenizer.decode_batch(generated_ids.tolist(), skip_special_tokens=True)
-
-        # Wrap each target in a list for BLEUScore requirements
-        targets = [[t] for t in self.tokenizer.decode_batch(batch["decoder_labels"].tolist(), skip_special_tokens=True)]
-        self.val_bleu(preds, targets)
-
-        # Log the BLEU score for monitoring (Lightning)
-        self.log("final_bleu", self.val_bleu, on_step=False, on_epoch=True, prog_bar=True)
