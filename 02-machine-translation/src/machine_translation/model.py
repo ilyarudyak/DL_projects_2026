@@ -3,11 +3,12 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import torchmetrics
-from torchmetrics.text import BLEUScore
 import tokenizers
+import torch.nn.functional as F
 
 # Standard library imports
 from pathlib import Path
+from typing import List, NamedTuple
 
 # Config and dataset import
 from src.machine_translation.config import TatoebaConfig
@@ -16,6 +17,12 @@ from src.machine_translation.dataset import TatoebaData
 # Logging setup
 import logging
 logger = logging.getLogger("tatoeba.model")
+
+
+class Hypothesis(NamedTuple):
+    value: List[int]       # decoded token IDs (without BOS/EOS)
+    score: float           # log-likelihood score
+    text: str = ""         # decoded string (optional convenience)
 
 class TatoebaModelPackedSeq(pl.LightningModule):
 
@@ -34,14 +41,12 @@ class TatoebaModelPackedSeq(pl.LightningModule):
     4) We use AdamW optimizer, a standard choice for NLP tasks.
     5) We support multiple learning rate schedulers: 
        ReduceLROnPlateau, CosineAnnealingLR, OneCycleLR, or no scheduler.
-    6) We use torchmetrics for accuracy and BLEU score computation (BLEU is not yet implemented).
 
     """
 
     def __init__(self, 
                  config: TatoebaConfig,
-                 tokenizer: tokenizers.Tokenizer,
-                 bleu_every_epoch: bool = False,
+                 tokenizer: tokenizers.Tokenizer
                  ):
         
         super().__init__()
@@ -70,15 +75,15 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         logger.debug(log_message)
         
 
-        # Model Layers
+        # (1) Initialize an embedding layer of size [vocab_size, embedding_dim]
         self.embed = nn.Embedding(num_embeddings=self.vocab_size, 
                                   embedding_dim=self.config.embedding_dim,
                                   # Add padding_idx to ignore the padding token during training
                                   padding_idx=self.pad_id) 
-        logger.debug(f"Embedding layer created with embedding_dim: {self.config.embedding_dim}")
         logger.debug(f"Embedding layer dimensions: {self.embed.weight.shape}")
         
-        # Initialize encoder and decoder GRU layers with the specified hyperparameters
+        # (2) Initialize encoder and decoder GRU layers with the specified hyperparameters
+        # NOT a bidirectional GRU in the current implementation
         self.encoder = nn.GRU(
             input_size=self.config.embedding_dim,
             hidden_size=self.config.hidden_dim,
@@ -108,34 +113,31 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         
         # Add Layer Normalization
         self.ln = nn.LayerNorm(self.config.hidden_dim)
-        logger.debug(f"LayerNorm created with hidden_dim: {self.config.hidden_dim}")
+        # logger.debug(f"LayerNorm created with hidden_dim: {self.config.hidden_dim}")
 
-        # Output Linear layer mapping hidden_dim to vocabulary size
+        # (3) Initialize Output Linear layer mapping hidden_dim to vocabulary size
         self.fc = nn.Linear(self.config.hidden_dim, self.vocab_size)
         message = f"Linear layer created with input_dim: {self.config.hidden_dim}"
         message += f", output_dim: {self.vocab_size:,}"
         logger.debug(message)
         
-        # Ignore padding index in loss computation
+        # (4) Initialize CrossEntropyLoss loss function with padding index ignored
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=self.pad_id)  
 
         # Weight initialization
         self._init_weights()
 
         # Initialize Metrics
-        self.train_acc = torchmetrics.Accuracy(
-            task="multiclass", 
-            num_classes=self.vocab_size, 
-            ignore_index=self.pad_id
-        )
-        self.val_acc = torchmetrics.Accuracy(
-            task="multiclass", 
-            num_classes=self.vocab_size, 
-            ignore_index=self.pad_id
-        )
-        # n_gram=4 is standard for BLEU
-        self.bleu_every_epoch = bleu_every_epoch
-        self.val_bleu = BLEUScore(n_gram=4)
+        # self.train_acc = torchmetrics.Accuracy(
+        #     task="multiclass", 
+        #     num_classes=self.vocab_size, 
+        #     ignore_index=self.pad_id
+        # )
+        # self.val_acc = torchmetrics.Accuracy(
+        #     task="multiclass", 
+        #     num_classes=self.vocab_size, 
+        #     ignore_index=self.pad_id
+        # )
 
     ####################################################
     # Essential methods for PyTorch Lightning
@@ -148,23 +150,25 @@ class TatoebaModelPackedSeq(pl.LightningModule):
 
         logger.debug(f"=== forward() call ===")
         logger.debug(f"---Input shapes---")
-        logger.debug(f"Encoder input_ids shape: {encoder_input_ids.shape}")
-        logger.debug(f"Encoder attention_mask shape: {encoder_attention_mask.shape}")
-        logger.debug(f"Decoder input_ids shape: {decoder_input_ids.shape}")
+        logger.debug(f"Encoder input_ids shape: {encoder_input_ids.shape}") # [batch_size, seq_length]
+        logger.debug(f"Encoder input_ids type: {type(encoder_input_ids)}")
+        logger.debug(f"Encode input ids: {encoder_input_ids}")
+        logger.debug(f"Encoder attention_mask shape: {encoder_attention_mask.shape}") # [batch_size, seq_length]
+        logger.debug(f"Decoder input_ids shape: {decoder_input_ids.shape}") # [batch_size, seq_length]
 
         # (1) Compute embeddings for the source and target sequences
         logger.debug(f"---Embeddings shapes---")
         src_embeddings = self.embed(encoder_input_ids) # [batch_size, seq_length, embedding_dim]
-        logger.debug(f"(1) Embeddings output shape: {src_embeddings.shape}")
+        logger.debug(f"(1) Encoder embeddings output shape: {src_embeddings.shape}")
         tgt_embeddings = self.embed(decoder_input_ids) # [batch_size, seq_length, embedding_dim]
         logger.debug(f"(1) Decoder embeddings output shape: {tgt_embeddings.shape}")
 
-        # (2) Prepare lengths for packing source sequences ONLY
+        # (2) Prepare lengths and pack the source embeddings for the GRU encoder
         # Lengths must be a 1D CPU int64 tensor
         src_lengths = encoder_attention_mask.sum(dim=1).cpu()
         logger.debug(f"---Packing sequences---")
-        logger.debug(f"(2) Attention mask shape: {encoder_attention_mask.shape}")
-        logger.debug(f"(2) Lengths tensor: {src_lengths[:5]}")
+        # logger.debug(f"(2) Attention mask shape: {encoder_attention_mask.shape}")
+        logger.debug(f"(2) Lengths tensor: {src_lengths}")
         
         packed_embeddings = nn.utils.rnn.pack_padded_sequence(
             src_embeddings, 
@@ -172,8 +176,9 @@ class TatoebaModelPackedSeq(pl.LightningModule):
             batch_first=True, 
             enforce_sorted=False
         )
+        logger.debug(f"(2) Packed embeddings data shape: {packed_embeddings.data.shape} Type: {type(packed_embeddings)}")
 
-        # (3) Pass embeddings through the Encoder
+        # (3) Pass PACKED embeddings through the Encoder
         # outputs: [batch_size, seq_length, hidden_dim]
         # last_hidden_state: [num_layers, batch_size, hidden_dim]
         encoder_packed_outputs, encoder_last_hidden_state = self.encoder(packed_embeddings)
@@ -184,17 +189,17 @@ class TatoebaModelPackedSeq(pl.LightningModule):
 
         # (4) Pass last hidden state to the Decoder 
         # last hidden state is a REGULAR tensor, not a packed one
+        # decoder_output: [batch_size, seq_length, hidden_dim]
         decoder_outputs, _ = self.decoder(tgt_embeddings, encoder_last_hidden_state)
         logger.debug(f"---Decoder outputs---")
         logger.debug(f"(4) Decoder output shape: {decoder_outputs.shape} Type: {type(decoder_outputs)}")
-
 
         # (5) Apply Layer Normalization to the Decoder outputs
         decoder_outputs = self.ln(decoder_outputs)
         logger.debug(f"---LayerNorm outputs---")
         logger.debug(f"(5) LayerNorm output shape: {decoder_outputs.shape}")
 
-        # (6) Map the final hidden state to category logits
+        # (6) Map the Decoder outputs to the vocabulary logits
         logits = self.fc(decoder_outputs) # [batch_size, seq_length, vocab_size]
         logger.debug(f"---Logits output---")
         logger.debug(f"(6) Logits output shape: {logits.shape}")
@@ -247,13 +252,6 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
         return loss
-
-    def test_step(self, batch, batch_idx):
-        """
-        Used for the one-time BLEU evaluation at the end of training.
-        This runs on the validation set (or test set) using the best weights.
-        """
-        self._compute_bleu(batch)
 
     def configure_optimizers(self):
         
@@ -348,7 +346,7 @@ class TatoebaModelPackedSeq(pl.LightningModule):
         - All other weights are initialized using Kaiming normal initialization.
         - Biases are initialized to 0.0.
         """
-        logger.debug(f"Custom weight initialization...")
+        # logger.debug(f"Custom weight initialization...")
         for name, param in self.named_parameters():
             if 'weight' in name:
                 if 'encoder' in name or 'decoder' in name:
@@ -430,3 +428,127 @@ class TatoebaModelPackedSeq(pl.LightningModule):
                 "interval": "step",  # Use 'step' for OneCycleLR
             },
         }
+
+    @torch.no_grad()
+    def beam_search(
+        self,
+        src_text_or_ids: str | torch.Tensor,
+        beam_size: int = 5,
+        max_decoding_time_step: int = 50,
+    ) -> List[Hypothesis]:
+        """Given a single source sentence (string or 1D/2D Tensor of IDs),
+        perform beam search and yield hypotheses sorted by score descending.
+        """
+        was_training = self.training
+        self.eval()
+
+        # 1. Encode source text into hidden state
+        if isinstance(src_text_or_ids, str):
+            encoding = self.tokenizer.encode(src_text_or_ids)
+            encoder_input_ids = torch.tensor([encoding.ids], device=self.device)
+            mask = torch.tensor([encoding.attention_mask], device=self.device)
+        else:
+            encoder_input_ids = src_text_or_ids.to(self.device)
+            if encoder_input_ids.ndim == 1:
+                encoder_input_ids = encoder_input_ids.unsqueeze(0)
+            mask = (encoder_input_ids != self.pad_id).long()
+
+        src_lengths = mask.sum(dim=1).cpu()
+        src_embeddings = self.embed(encoder_input_ids)
+        packed_embeddings = nn.utils.rnn.pack_padded_sequence(
+            src_embeddings, src_lengths, batch_first=True, enforce_sorted=False
+        )
+        # encoder_last_hidden: [num_layers, 1, hidden_dim]
+        _, encoder_last_hidden = self.encoder(packed_embeddings)
+
+        # 2. Initialize hypotheses
+        # hypotheses holds token ID lists; scores holds log probabilities
+        hypotheses = [[self.bos_id]]
+        hyp_scores = torch.zeros(1, dtype=torch.float, device=self.device)
+        completed_hypotheses: List[Hypothesis] = []
+
+        # Current hidden state: [num_layers, hyp_num, hidden_dim]
+        h_tm1 = encoder_last_hidden  # starts with shape [num_layers, 1, hidden_dim]
+
+        t = 0
+        while len(completed_hypotheses) < beam_size and t < max_decoding_time_step:
+            t += 1
+            hyp_num = len(hypotheses)
+
+            # Last predicted token for each live beam: [hyp_num, 1]
+            y_tm1 = torch.tensor([[hyp[-1]] for hyp in hypotheses], dtype=torch.long, device=self.device)
+            y_t_embed = self.embed(y_tm1)  # [hyp_num, 1, embed_dim]
+
+            # Step decoder: output [hyp_num, 1, hidden_dim], h_t [num_layers, hyp_num, hidden_dim]
+            decoder_outputs, h_t = self.decoder(y_t_embed, h_tm1)
+            decoder_outputs = self.ln(decoder_outputs)
+            logits = self.fc(decoder_outputs).squeeze(1)  # [hyp_num, vocab_size]
+            log_p_t = F.log_softmax(logits, dim=-1)        # [hyp_num, vocab_size]
+
+            # Calculate cumulative scores for all beam x vocab expansions
+            live_hyp_num = beam_size - len(completed_hypotheses)
+            continuing_hyp_scores = (hyp_scores.unsqueeze(1).expand_as(log_p_t) + log_p_t).view(-1)
+            
+            # Top candidate branches
+            top_cand_scores, top_cand_pos = torch.topk(continuing_hyp_scores, k=min(live_hyp_num * 2, continuing_hyp_scores.size(0)))
+
+            prev_hyp_ids = torch.div(top_cand_pos, self.vocab_size, rounding_mode='floor')
+            hyp_token_ids = top_cand_pos % self.vocab_size
+
+            new_hypotheses = []
+            live_hyp_indices = []
+            new_hyp_scores = []
+
+            for prev_idx, token_id, cand_score in zip(prev_hyp_ids, hyp_token_ids, top_cand_scores):
+                prev_idx = prev_idx.item()
+                token_id = token_id.item()
+                cand_score = cand_score.item()
+
+                new_seq = hypotheses[prev_idx] + [token_id]
+
+                if token_id == self.eos_id:
+                    # Strip leading BOS and trailing EOS
+                    clean_ids = new_seq[1:-1]
+                    completed_hypotheses.append(
+                        Hypothesis(
+                            value=clean_ids,
+                            score=cand_score,
+                            text=self.tokenizer.decode(clean_ids, skip_special_tokens=True)
+                        )
+                    )
+                    if len(completed_hypotheses) == beam_size:
+                        break
+                else:
+                    if len(new_hypotheses) < live_hyp_num:
+                        new_hypotheses.append(new_seq)
+                        live_hyp_indices.append(prev_idx)
+                        new_hyp_scores.append(cand_score)
+
+            if len(completed_hypotheses) == beam_size or len(new_hypotheses) == 0:
+                break
+
+            # Select hidden states corresponding to surviving hypotheses
+            live_hyp_indices = torch.tensor(live_hyp_indices, dtype=torch.long, device=self.device)
+            # h_t is [num_layers, hyp_num, hidden_dim]; slice along dim=1 (batch/hyp dimension)
+            h_tm1 = h_t[:, live_hyp_indices, :]
+
+            hypotheses = new_hypotheses
+            hyp_scores = torch.tensor(new_hyp_scores, dtype=torch.float, device=self.device)
+
+        # Fallback if no hypothesis reached EOS
+        if len(completed_hypotheses) == 0:
+            clean_ids = hypotheses[0][1:]
+            completed_hypotheses.append(
+                Hypothesis(
+                    value=clean_ids,
+                    score=hyp_scores[0].item(),
+                    text=self.tokenizer.decode(clean_ids, skip_special_tokens=True)
+                )
+            )
+
+        completed_hypotheses.sort(key=lambda h: h.score, reverse=True)
+
+        if was_training:
+            self.train()
+
+        return completed_hypotheses

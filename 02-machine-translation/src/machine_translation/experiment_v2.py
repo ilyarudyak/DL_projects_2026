@@ -10,6 +10,8 @@ import pandas as pd
 from pathlib import Path
 import matplotlib.pyplot as plt
 import time
+import sacrebleu
+from tqdm import tqdm
 
 
 # Config, dataset and model imports
@@ -399,3 +401,114 @@ class ExperimentRunnerWithCustomLogging:
                   # Write header only if the file does not exist to avoid duplicate headers 
                   header=not os.path.exists(summary_file), 
                   index=False)
+
+    def evaluate_ppl(self, dataloader=None):
+        """
+        Compute token-level perplexity over the validation dataset.
+
+        Perplexity is calculated from the total negative log-likelihood
+        divided by the total number of non-padding target tokens.
+        """
+        if dataloader is None:
+            dataloader = self.data.val_dataloader()
+
+        was_training = self.model.training
+        self.model.eval()
+
+        total_nll = 0.0
+        total_tokens = 0
+
+        with torch.inference_mode():
+            for batch in dataloader:
+                encoder_input_ids = batch["encoder_input_ids"].to(self.model.device)
+                encoder_attention_mask = batch["encoder_attention_mask"].to(self.model.device)
+                decoder_input_ids = batch["decoder_input_ids"].to(self.model.device)
+                decoder_labels = batch["decoder_labels"].to(self.model.device)
+
+                logits = self.model(
+                    encoder_input_ids,
+                    encoder_attention_mask,
+                    decoder_input_ids,
+                )
+
+                # Sum losses over valid target tokens in this batch.
+                batch_nll = torch.nn.functional.cross_entropy(
+                    logits,
+                    decoder_labels,
+                    ignore_index=self.model.pad_id,
+                    reduction="sum",
+                )
+
+                batch_tokens = (decoder_labels != self.model.pad_id).sum()
+
+                total_nll += batch_nll.item()
+                total_tokens += batch_tokens.item()
+
+        if was_training:
+            self.model.train()
+
+        if total_tokens == 0:
+            raise ValueError("Cannot compute perplexity: no non-padding target tokens found.")
+
+        average_nll = total_nll / total_tokens
+        perplexity = torch.exp(torch.tensor(average_nll)).item()
+
+        return {
+            "perplexity": perplexity,
+            "average_nll": average_nll,
+            "tokens": total_tokens,
+        }
+
+    def decode(
+        self,
+        split: str = "val",             # 'val' or 'test'
+        beam_size: int = 5,
+        max_samples: int = None,
+        compute_bleu: bool = True,
+        max_decoding_time_step: int = 50,
+    ):
+        """Decodes the validation or test split using Beam Search,
+        prints sample translations, and computes the corpus BLEU score.
+        """
+        # 1. Select dataset split
+        raw_data = self.data.val_data if split == "val" else self.data.test_data
+        if max_samples:
+            raw_data = raw_data[:max_samples]
+
+        self.model.eval()
+        hypotheses_text = []
+        references_text = []
+
+        print(f"\n🔍 Decoding {len(raw_data)} sentences from '{split}' set (beam_size={beam_size})...")
+
+        for sample in tqdm(raw_data, desc="Decoding"):
+            src_text = sample["source_text"]
+            tgt_text = sample["target_text"]
+
+            hyps = self.model.beam_search(
+                src_text,
+                beam_size=beam_size,
+                max_decoding_time_step=max_decoding_time_step
+            )
+
+            top_hyp_text = hyps[0].text
+            hypotheses_text.append(top_hyp_text)
+            references_text.append(tgt_text)
+
+        # 2. Print a few sample predictions
+        print("\n--- Sample Translations ---")
+        for i in range(min(5, len(hypotheses_text))):
+            print(f"Source:    {raw_data[i]['source_text']}")
+            print(f"Target:    {references_text[i]}")
+            print(f"Predicted: {hypotheses_text[i]}")
+            print("-" * 30)
+
+        # 3. Compute SacreBLEU
+        results = {"hypotheses": hypotheses_text, "references": references_text}
+        if compute_bleu:
+            # sacrebleu expects references as a list of reference streams: [refs]
+            bleu = sacrebleu.corpus_bleu(hypotheses_text, [references_text])
+            results["bleu"] = bleu.score
+            print(f"\n📊 Corpus BLEU score: {bleu.score:.2f}")
+
+        return results
